@@ -1,0 +1,39 @@
+WHITESPACE = _{ " " |  "\\" ~ NEWLINE } // i.e. newlines preceded by a backslash are insignificant whitespace
+
+NON_ZERO_DIGIT = _{ '1'..'9' }
+DIGIT = _{ ("0" | NON_ZERO_DIGIT) }
+DECIMAL_POINT = _{ "." }
+
+PLUS_SIGN = { "+" }
+MINUS_SIGN = { "-" }
+STAR_SIGN = { "*" }
+FORWARD_SLASH = { "/" }
+DOUBLE_AMP = { "&&" }
+DOUBLE_PIPE = { "||" }
+EQUALS_OPERATOR = { "==" }
+NOT_EQUALS_OPERATOR = { "!=" }
+LESS_THAN = { "<" }
+LESS_EQUAL = { "<=" }
+GREATER_THAN = { ">" }
+GREATER_EQUAL = { ">=" }
+MODULO_OPERATOR = { "%" }
+
+bin_op = _{ PLUS_SIGN | MINUS_SIGN | STAR_SIGN | FORWARD_SLASH | DOUBLE_AMP | DOUBLE_PIPE | EQUALS_OPERATOR | NOT_EQUALS_OPERATOR | LESS_EQUAL | LESS_THAN | GREATER_EQUAL | GREATER_THAN | MODULO_OPERATOR }
+
+integer = @{ MINUS_SIGN? ~ DIGIT+ }
+real = @{ MINUS_SIGN? ~ integer? ~ DECIMAL_POINT ~ DIGIT+ }
+
+// Must be in this order, @{ integer | real } would match 123 in the input 123.456 because it would greedily match as integer instead
+number =  @{ real | integer }
+
+identifier = @{ "x" } // x is the only legal identifier :)
+
+atom = _{ number | "(" ~ expr ~ ")" | identifier  }
+expr = { atom ~ (bin_op ~ atom)* }
+
+filter_clause = { "filter" ~ expr }
+map_clause = { "map" ~ expr }
+
+clause = { filter_clause | map_clause } 
+
+program = { (clause ~ "|")* ~ clause }
