@@ -5,6 +5,7 @@ extern crate pest_derive;
 
 mod parser;
 mod interpreter;
+mod compiler;
 
 fn main() {
     let stdin = std::io::stdin();
@@ -18,12 +19,18 @@ fn main() {
 
     let program = parser::lex_and_parse(&program_text);
 
+    let should_compile = std::env::args().nth(2).unwrap_or("interpret".into()).eq_ignore_ascii_case("compile");
+
     match program {
         Ok(program) => {
-            for input in input {
-                match interpreter::interpret_program_on_input(&program, input) {
-                    Some(result) => println!("{}", result),
-                    None => {}
+            if should_compile {
+                compiler::compile_and_run_program(&program, input);
+            } else {
+                for input in input {
+                    match interpreter::interpret_program_on_input(&program, input) {
+                        Some(result) => println!("{}", result),
+                        None => {}
+                    }
                 }
             }
         }
