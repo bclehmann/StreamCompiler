@@ -6,3 +6,4 @@ edition = "2021"
 [dependencies]
 pest = "2.7.5"
 pest_derive = "2.7.5"
+inkwell = { version = "0.6.0", features = ["llvm18-1"] }
