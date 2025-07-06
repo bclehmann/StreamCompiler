@@ -13,7 +13,7 @@ struct ProgramResult {
 }
 
 type ClauseFunction = unsafe extern "C" fn(f64) -> f64;
-type ProgramFunction = unsafe extern "C" fn(f64) -> *const ProgramResult;
+pub type ProgramFunction = unsafe extern "C" fn(f64, *mut f64, *mut bool) -> ();
 
 static mut ID: u64 = 0;
 
@@ -24,7 +24,7 @@ fn get_id() -> u64 {
     }
 }
 
-struct CodeGen<'ctx> {
+pub struct CodeGen<'ctx> {
     context: &'ctx Context,
     module: Module<'ctx>,
     builder: Builder<'ctx>,
@@ -32,10 +32,10 @@ struct CodeGen<'ctx> {
 }
 
 impl<'ctx> CodeGen<'ctx> {
-    fn new(context: &'ctx Context) -> Self {
+    pub fn new(context: &'ctx Context, olevel: OptimizationLevel) -> Self {
         let module = context.create_module("stream_compiler");
         let builder = context.create_builder();
-        let execution_engine = module.create_jit_execution_engine(OptimizationLevel::None).expect("Failed to create execution engine");
+        let execution_engine = module.create_jit_execution_engine(olevel).expect("Failed to create execution engine");
         
         CodeGen {
             context,
@@ -45,7 +45,7 @@ impl<'ctx> CodeGen<'ctx> {
         }
     }
 
-    fn compile_program(&'ctx self, program: &'ctx[Clause]) -> JitFunction<'ctx, ProgramFunction>
+    pub fn compile_program(&'ctx self, program: &'ctx[Clause]) -> JitFunction<'ctx, ProgramFunction>
     {
         struct CompiledClause<'a> {
             clause: &'a Clause<'a>,
@@ -64,41 +64,27 @@ impl<'ctx> CodeGen<'ctx> {
             }
         }
 
-        let program_result_type = self.context.struct_type(&[self.context.f64_type().into(), self.context.bool_type().into()], false);
-        let return_type = self.context.ptr_type(AddressSpace::default());
-        let program_fn_type = return_type.fn_type(&[self.context.f64_type().into()], false);
-        let program_fn_name = "program";
+        let program_fn_type = self.context.void_type().fn_type(
+            &[
+                self.context.f64_type().into(),
+                self.context.ptr_type(AddressSpace::default()).into(),
+                self.context.ptr_type(AddressSpace::default()).into(),
+            ],
+            false
+        );
+        let program_fn_name_string = format!("program_{}", get_id());
+        let program_fn_name = program_fn_name_string.as_str();
         let function = self.module.add_function(program_fn_name, program_fn_type, Some(Linkage::External));
         
         let entry = self.context.append_basic_block(function, "entry");
         self.builder.position_at_end(entry);
 
         let input = function.get_first_param().expect("Function should have one parameter").into_float_value();
-        let result_value = self.builder.build_alloca(self.context.f64_type(), "result_value").expect("Could not allocate result value");
-        let filtered_out = self.builder.build_alloca(self.context.bool_type(), "filtered_out").expect("Could not alloca filtered_out");
-        let result_struct = self.builder.build_alloca(program_result_type, "result_struct").expect("Could not alloca result struct"); // This is only written before return so I have to write less GEPs
+        let result_value = function.get_nth_param(1).expect("Function should have a second parameter").into_pointer_value();
+        let filtered_out = function.get_nth_param(2).expect("Function should have a third parameter").into_pointer_value();
 
         self.builder.build_store(result_value, input);
         self.builder.build_store(filtered_out, self.context.bool_type().const_zero());
-
-        self.builder.build_store(
-            self.builder.build_struct_gep(
-                program_result_type,
-                result_struct,
-                0,
-                "result_struct.result"
-            ).expect("Could not build result_struct.result GEP"),
-            self.context.f64_type().const_float(0.0)
-        );
-        self.builder.build_store(
-            self.builder.build_struct_gep(
-                program_result_type,
-                result_struct,
-                1,
-                "result_struct.filtered_out"
-            ).expect("Could not build result_struct.filtered_out GEP"),
-            self.context.i8_type().const_int(0, false)
-        );
 
         for clause in compiled_clauses {
             let result_f64 = self.builder.build_call(
@@ -128,16 +114,11 @@ impl<'ctx> CodeGen<'ctx> {
 
                     self.builder.position_at_end(early_exit_bb);
                     self.builder.build_store(
-                        self.builder.build_struct_gep(
-                            program_result_type,
-                            result_struct,
-                            1,
-                            "result_struct.filtered_out"
-                        ).expect("Could not build result_struct.filtered_out GEP"),
-                        self.context.i8_type().const_int(1, false)
+                        filtered_out,
+                        self.context.bool_type().const_int(1, false)
                     );
 
-                    self.builder.build_return(Some(&result_struct));
+                    self.builder.build_return(None);
 
                     self.builder.position_at_end(continue_bb); // Put it in place for the next clause
                 },
@@ -150,23 +131,9 @@ impl<'ctx> CodeGen<'ctx> {
             }
         };
 
-        self.builder.build_store(
-            self.builder.build_struct_gep(
-                program_result_type,
-                result_struct,
-                0,
-                "result_struct.result"
-            ).expect("Could not build result_struct.result GEP"),
-            self.builder.build_load(
-                self.context.f64_type(),
-                result_value,
-                "final_load"
-            ).expect("Could not build result_value load")
-        );
+        self.builder.build_return(None);
 
-        self.builder.build_return(Some(&result_struct));
-
-        self.module.print_to_stderr();
+        // self.module.print_to_stderr();
 
         unsafe { self.execution_engine.get_function(program_fn_name).ok().unwrap() }
     }
@@ -273,22 +240,4 @@ impl<'ctx> CodeGen<'ctx> {
         let zero = self.context.f64_type().const_float(0.0);
         self.builder.build_float_compare(inkwell::FloatPredicate::ONE, value, zero, "is_non_zero").expect("Could not convert to bool") // Returns false if either operand is NaN
     }
-}
-
-pub fn compile_and_run_program<T: Iterator<Item=f64>>(program: &[Clause], input: T) {
-    let context = Context::create();
-    let codegen = Box::leak(Box::new(CodeGen::new(&context))); // Rust thinks `program` may outlive this scope, so we just leak the memory
-
-    let program = codegen.compile_program(program);
-    for x in input {
-        unsafe {
-            let result = program.call(x);
-            if !(*result).filtered_out {
-                println!("{}", (*result).result);
-            }
-            println!("{:?}", *result);
-        }
-    }
-
-    return;
 }
