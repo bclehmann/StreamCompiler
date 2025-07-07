@@ -83,20 +83,18 @@ impl<'ctx> CodeGen<'ctx> {
         let result_value = function.get_nth_param(1).expect("Function should have a second parameter").into_pointer_value();
         let filtered_out = function.get_nth_param(2).expect("Function should have a third parameter").into_pointer_value();
 
-        self.builder.build_store(result_value, input);
+        // self.builder.build_store(result_value, input); it's ok to leave this uninitialized, we will overwrite it if we don't filter out (even if there's no clauses)
         self.builder.build_store(filtered_out, self.context.bool_type().const_zero());
 
+        let mut next_input = input;
         for clause in compiled_clauses {
+            let clause_entry_bb = self.context.append_basic_block(function, "clause_entry");
+            self.builder.build_unconditional_branch(clause_entry_bb);
+            self.builder.position_at_end(clause_entry_bb);
+
             let result_f64 = self.builder.build_call(
                 clause.function,
-                &[
-                    self.builder.build_load(
-                        self.context.f64_type(),
-                        result_value,
-                        "result_value"
-                    ).expect("Could not build load")
-                    .into()
-                ],
+                &[next_input.into()],
                 "call_clause"
             ).unwrap()
             .try_as_basic_value()
@@ -123,14 +121,12 @@ impl<'ctx> CodeGen<'ctx> {
                     self.builder.position_at_end(continue_bb); // Put it in place for the next clause
                 },
                 ClauseType::Map => {
-                    self.builder.build_store(
-                        result_value,
-                        result_f64
-                    );
+                    next_input = result_f64; // Update next input for the next clause
                 }
             }
         };
 
+        self.builder.build_store(result_value, next_input);
         self.builder.build_return(None);
 
         // self.module.print_to_stderr();
