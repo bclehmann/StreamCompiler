@@ -1,7 +1,7 @@
 
 use core::panic;
 
-use inkwell::{builder::Builder, context::Context, execution_engine::{ExecutionEngine, JitFunction}, module::{Linkage, Module}, values::{FloatValue, FunctionValue, IntValue}, AddressSpace, OptimizationLevel};
+use inkwell::{builder::Builder, context::Context, execution_engine::{ExecutionEngine, JitFunction}, module::{Linkage, Module}, targets::{CodeModel, FileType, InitializationConfig, RelocMode, Target, TargetMachine}, values::{FloatValue, FunctionValue, IntValue}, AddressSpace, OptimizationLevel};
 
 use crate::parser::{BinaryOperator, Clause, ClauseType, Expr};
 
@@ -43,6 +43,32 @@ impl<'ctx> CodeGen<'ctx> {
             builder,
             execution_engine,
         }
+    }
+
+    fn dump_module(&self) {
+        self.module.print_to_file("out.ll").expect("Failed to write module to file");
+        self.module.write_bitcode_to_path("out.bc");
+
+        Target::initialize_native(&InitializationConfig::default()).expect("Failed to initialize native target");
+        let triple = TargetMachine::get_default_triple();
+        let cpu = TargetMachine::get_host_cpu_name().to_string();
+        let features = TargetMachine::get_host_cpu_features().to_string();
+
+        let target = Target::from_triple(&triple).unwrap();
+        let machine = target
+            .create_target_machine(
+                &triple,
+                &cpu,
+                &features,
+                OptimizationLevel::Aggressive,
+                RelocMode::Default,
+                CodeModel::Default,
+            )
+            .unwrap();
+        
+            // create a module and do JIT stuff
+
+        machine.write_to_file(&self.module, FileType::Assembly, "out.S".as_ref()).unwrap();
     }
 
     pub fn compile_program(&'ctx self, program: &'ctx[Clause]) -> JitFunction<'ctx, ProgramFunction>
@@ -129,8 +155,7 @@ impl<'ctx> CodeGen<'ctx> {
         self.builder.build_store(result_value, next_input);
         self.builder.build_return(None);
 
-        // self.module.print_to_stderr();
-
+        // self.dump_module();
         unsafe { self.execution_engine.get_function(program_fn_name).ok().unwrap() }
     }
 
