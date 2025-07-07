@@ -51,13 +51,14 @@ pub enum BinaryOperator {
 
 fn parse_expression(pairs: Pairs<Rule>) -> Result<Expr, &'static str> {
     // FWIW, I think prat means something rude in British English
+    // Precedence is *lowest to highest*
     let pratt = PrattParser::new()
-        .op(Op::infix(Rule::PLUS_SIGN, Assoc::Left) | Op::infix(Rule::MINUS_SIGN, Assoc::Left))
-        .op(Op::infix(Rule::STAR_SIGN, Assoc::Left) | Op::infix(Rule::FORWARD_SLASH, Assoc::Left) | Op::infix(Rule::MODULO_OPERATOR, Assoc::Left))
-        .op(Op::infix(Rule::LESS_THAN, Assoc::Left) | Op::infix(Rule::LESS_EQUAL, Assoc::Left) | Op::infix(Rule::GREATER_THAN, Assoc::Left) | Op::infix(Rule::GREATER_EQUAL, Assoc::Left))
-        .op(Op::infix(Rule::EQUALS_OPERATOR, Assoc::Left) | Op::infix(Rule::NOT_EQUALS_OPERATOR, Assoc::Left))
+        .op(Op::infix(Rule::DOUBLE_PIPE, Assoc::Left))
         .op(Op::infix(Rule::DOUBLE_AMP, Assoc::Left))
-        .op(Op::infix(Rule::DOUBLE_PIPE, Assoc::Left));
+        .op(Op::infix(Rule::EQUALS_OPERATOR, Assoc::Left) | Op::infix(Rule::NOT_EQUALS_OPERATOR, Assoc::Left))
+        .op(Op::infix(Rule::LESS_THAN, Assoc::Left) | Op::infix(Rule::LESS_EQUAL, Assoc::Left) | Op::infix(Rule::GREATER_THAN, Assoc::Left) | Op::infix(Rule::GREATER_EQUAL, Assoc::Left))
+        .op(Op::infix(Rule::PLUS_SIGN, Assoc::Left) | Op::infix(Rule::MINUS_SIGN, Assoc::Left))
+        .op(Op::infix(Rule::STAR_SIGN, Assoc::Left) | Op::infix(Rule::FORWARD_SLASH, Assoc::Left) | Op::infix(Rule::MODULO_OPERATOR, Assoc::Left));
 
     let expr = pratt
         .map_primary(|p| match p.as_rule() {
