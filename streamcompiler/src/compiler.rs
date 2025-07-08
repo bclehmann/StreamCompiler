@@ -126,6 +126,19 @@ impl<'ctx> CodeGen<'ctx> {
             ).expect("Could not build increment"), loop_end_bb),
         ]);
 
+        let loop_body_bb = self.context.append_basic_block(function, "loop_body");
+        self.builder.build_conditional_branch(
+            self.builder.build_int_compare(
+                inkwell::IntPredicate::ULT,
+                loop_index.as_basic_value().into_int_value(),
+                input_len,
+                "loop_condition"
+            ).expect("Could not build loop condition"),
+            loop_body_bb,
+           program_exit_bb 
+        );
+        self.builder.position_at_end(loop_body_bb);
+
         // self.builder.build_store(result_value, input); it's ok to leave this uninitialized, we will overwrite it if we don't filter out (even if there's no clauses)
         self.builder.build_store(filtered_out, self.context.bool_type().const_zero());
 
@@ -203,17 +216,20 @@ impl<'ctx> CodeGen<'ctx> {
             ).expect("Could not build GEP for result")
         };
 
+
         self.builder.build_store(result_value_gep, next_input);
+        self.builder.build_call(
+            self.module.get_function("printf").expect("Could not get printf"),
+            &[
+                format_specifier.into(),
+                next_input.as_basic_value_enum().into()
+            ],
+            "printf_call"
+        );
 
         self.builder.build_unconditional_branch(loop_end_bb);
         self.builder.position_at_end(loop_end_bb);
-        let loop_condition = self.builder.build_int_compare(
-            inkwell::IntPredicate::ULT,
-            loop_index.as_basic_value().into_int_value(),
-            input_len,
-            "loop_condition"
-        ).expect("Could not build loop condition");
-        self.builder.build_conditional_branch(loop_condition, loop_bb, program_exit_bb);
+        self.builder.build_unconditional_branch(loop_bb);
 
         self.builder.position_at_end(program_exit_bb);
         self.builder.build_return(None);
