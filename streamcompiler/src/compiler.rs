@@ -211,7 +211,7 @@ impl<'ctx> CodeGen<'ctx> {
         self.builder.position_at_end(program_exit_bb);
         self.builder.build_return(None);
 
-        self.dump_module();
+        // self.dump_module();
         unsafe { self.execution_engine.get_function(program_fn_name).ok().unwrap() }
     }
 
