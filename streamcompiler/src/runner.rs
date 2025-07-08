@@ -1,3 +1,5 @@
+use std::vec;
+
 use inkwell::context::Context;
 use inkwell::execution_engine::JitFunction;
 use inkwell::OptimizationLevel;
@@ -7,7 +9,7 @@ use crate::parser::Clause;
 use crate::compiler::{CodeGen, ProgramFunction};
 
 pub trait Runner {
-    fn run_once(&self, input: f64);
+    fn run(&self, input: &[f64]);
 }
 
 
@@ -23,10 +25,12 @@ impl<'a> InterpreterRunner<'a>
 }
 
 impl<'a> Runner for InterpreterRunner<'a> {
-    fn run_once(&self, input: f64) {
-        match interpreter::interpret_program_on_input(&self.program, input) {
-            Some(result) => println!("{}", result),
-            None => {}
+    fn run(&self, input: &[f64]) {
+        for &v in input {
+            match interpreter::interpret_program_on_input(&self.program, v) {
+                Some(result) => println!("{}", result),
+                None => {}
+            }
         }
     }
 }
@@ -47,14 +51,16 @@ impl<'a> CompilerRunner<'a> {
 }
 
 impl<'a> Runner for CompilerRunner<'a> {
-    fn run_once(&self, input: f64) {
-        let mut result = 0.0;
-        let mut filtered_out = false;
-        unsafe { self.program.call(input, &mut result, &mut filtered_out); }
+    fn run(&self, input: &[f64]) {
+        let mut result = vec![0.0; input.len()];
+        let mut filtered_out = vec![false; input.len()];
+        unsafe { self.program.call(input.as_ptr(), input.len() as i32, result.as_mut_ptr(), filtered_out.as_mut_ptr()); }
 
-
-        if !filtered_out {
-            println!("{}", result);
+        for i in 0..input.len() {
+            if filtered_out[i] {
+                continue;
+            }
+            println!("{}", result[i]);
         }
     }
 }

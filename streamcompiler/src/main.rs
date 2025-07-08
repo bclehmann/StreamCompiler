@@ -45,10 +45,7 @@ fn main() {
         let input = input_lines
             .map(|line| line.parse::<f64>().expect("Could not parse input"));
 
-        for input_value in input {
-            runner.run_once(input_value);
-        }
-
+        runner.run(&input.collect::<Vec<f64>>());
     } else {
         panic!("Failed to parse program: {}", program.unwrap_err());
     }

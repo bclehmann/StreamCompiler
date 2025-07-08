@@ -13,7 +13,7 @@ struct ProgramResult {
 }
 
 type ClauseFunction = unsafe extern "C" fn(f64) -> f64;
-pub type ProgramFunction = unsafe extern "C" fn(f64, *mut f64, *mut bool) -> ();
+pub type ProgramFunction = unsafe extern "C" fn(*const f64, i32, *mut f64, *mut bool) -> ();
 
 static mut ID: u64 = 0;
 
@@ -92,7 +92,8 @@ impl<'ctx> CodeGen<'ctx> {
 
         let program_fn_type = self.context.void_type().fn_type(
             &[
-                self.context.f64_type().into(),
+                self.context.ptr_type(AddressSpace::default()).into(),
+                self.context.i32_type().into(),
                 self.context.ptr_type(AddressSpace::default()).into(),
                 self.context.ptr_type(AddressSpace::default()).into(),
             ],
@@ -103,16 +104,57 @@ impl<'ctx> CodeGen<'ctx> {
         let function = self.module.add_function(program_fn_name, program_fn_type, Some(Linkage::External));
         
         let entry = self.context.append_basic_block(function, "entry");
+        let program_exit_bb = self.context.append_basic_block(function, "program_exit");
         self.builder.position_at_end(entry);
 
-        let input = function.get_first_param().expect("Function should have one parameter").into_float_value();
-        let result_value = function.get_nth_param(1).expect("Function should have a second parameter").into_pointer_value();
-        let filtered_out = function.get_nth_param(2).expect("Function should have a third parameter").into_pointer_value();
+        let input_ptr = function.get_first_param().expect("Function should have one parameter").into_pointer_value();
+        let input_len = function.get_nth_param(1).expect("Function should have a second parameter").into_int_value();
+        let result_value = function.get_nth_param(2).expect("Function should have a third parameter").into_pointer_value();
+        let filtered_out = function.get_nth_param(3).expect("Function should have a fourth parameter").into_pointer_value();
+
+        let loop_bb = self.context.append_basic_block(function, "loop");
+        let loop_end_bb = self.context.append_basic_block(function, "loop_end");
+        self.builder.build_unconditional_branch(loop_bb);
+        self.builder.position_at_end(loop_bb);
+        let loop_index = self.builder.build_phi(self.context.i32_type(), "loop_index").expect("Failed to create loop index");
+        loop_index.add_incoming(&[
+            (&self.context.i32_type().const_zero(), entry),
+            (&self.builder.build_int_add(
+                loop_index.as_basic_value().into_int_value(),
+                self.context.i32_type().const_int(1, false),
+                "next_index"
+            ).expect("Could not build increment"), loop_end_bb),
+        ]);
 
         // self.builder.build_store(result_value, input); it's ok to leave this uninitialized, we will overwrite it if we don't filter out (even if there's no clauses)
         self.builder.build_store(filtered_out, self.context.bool_type().const_zero());
 
-        let mut next_input = input;
+        let filtered_out_gep = unsafe {
+            self.builder.build_gep(
+                self.context.bool_type(),
+                filtered_out,
+                &[loop_index.as_basic_value().into_int_value()],
+                "result_ptr"
+            ).expect("Could not build GEP for filtered_out")
+        };
+        self.builder.build_store(
+            filtered_out_gep,
+            self.context.bool_type().const_zero()
+        );
+
+        let mut next_input = self.builder.build_load(
+            self.context.f64_type(),
+            unsafe {
+                self.builder.build_gep(
+                    self.context.f64_type(),
+                    input_ptr,
+                    &[loop_index.as_basic_value().into_int_value()],
+                    "input_ptr"
+                ).expect("Could not build GEP for input")
+            },
+            "next_input"
+        ).expect("Failed to load next input").into_float_value();
+
         for clause in compiled_clauses {
             let clause_entry_bb = self.context.append_basic_block(function, "clause_entry");
             self.builder.build_unconditional_branch(clause_entry_bb);
@@ -138,11 +180,11 @@ impl<'ctx> CodeGen<'ctx> {
 
                     self.builder.position_at_end(early_exit_bb);
                     self.builder.build_store(
-                        filtered_out,
+                        filtered_out_gep,
                         self.context.bool_type().const_int(1, false)
                     );
 
-                    self.builder.build_return(None);
+                    self.builder.build_unconditional_branch(loop_end_bb);
 
                     self.builder.position_at_end(continue_bb); // Put it in place for the next clause
                 },
@@ -152,10 +194,31 @@ impl<'ctx> CodeGen<'ctx> {
             }
         };
 
-        self.builder.build_store(result_value, next_input);
+        let result_value_gep = unsafe {
+            self.builder.build_gep(
+                self.context.f64_type(),
+                result_value,
+                &[loop_index.as_basic_value().into_int_value()],
+                "result_ptr"
+            ).expect("Could not build GEP for result")
+        };
+
+        self.builder.build_store(result_value_gep, next_input);
+
+        self.builder.build_unconditional_branch(loop_end_bb);
+        self.builder.position_at_end(loop_end_bb);
+        let loop_condition = self.builder.build_int_compare(
+            inkwell::IntPredicate::ULT,
+            loop_index.as_basic_value().into_int_value(),
+            input_len,
+            "loop_condition"
+        ).expect("Could not build loop condition");
+        self.builder.build_conditional_branch(loop_condition, loop_bb, program_exit_bb);
+
+        self.builder.position_at_end(program_exit_bb);
         self.builder.build_return(None);
 
-        // self.dump_module();
+        self.dump_module();
         unsafe { self.execution_engine.get_function(program_fn_name).ok().unwrap() }
     }
 
