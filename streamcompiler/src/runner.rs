@@ -52,15 +52,7 @@ impl<'a> CompilerRunner<'a> {
 
 impl<'a> Runner for CompilerRunner<'a> {
     fn run(&self, input: &[f64]) {
-        let mut result = vec![0.0; input.len()];
-        let mut filtered_out = vec![false; input.len()];
-        unsafe { self.program.call(input.as_ptr(), input.len() as i32, result.as_mut_ptr(), filtered_out.as_mut_ptr()); }
+        unsafe { self.program.call(input.as_ptr(), input.len() as i32); }
 
-        for i in 0..input.len() {
-            if filtered_out[i] {
-                continue;
-            }
-            println!("{}", result[i]);
-        }
     }
 }

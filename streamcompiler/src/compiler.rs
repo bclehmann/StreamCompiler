@@ -1,7 +1,7 @@
 
 use core::panic;
 
-use inkwell::{builder::Builder, context::Context, execution_engine::{ExecutionEngine, JitFunction}, module::{Linkage, Module}, targets::{CodeModel, FileType, InitializationConfig, RelocMode, Target, TargetMachine}, values::{FloatValue, FunctionValue, IntValue}, AddressSpace, OptimizationLevel};
+use inkwell::{builder::Builder, context::Context, execution_engine::{ExecutionEngine, JitFunction}, module::{Linkage, Module}, targets::{CodeModel, FileType, InitializationConfig, RelocMode, Target, TargetMachine}, values::{AnyValue, BasicValue, FloatValue, FunctionValue, IntValue}, AddressSpace, OptimizationLevel};
 
 use crate::parser::{BinaryOperator, Clause, ClauseType, Expr};
 
@@ -13,7 +13,7 @@ struct ProgramResult {
 }
 
 type ClauseFunction = unsafe extern "C" fn(f64) -> f64;
-pub type ProgramFunction = unsafe extern "C" fn(*const f64, i32, *mut f64, *mut bool) -> ();
+pub type ProgramFunction = unsafe extern "C" fn(*const f64, i32) -> ();
 
 static mut ID: u64 = 0;
 
@@ -37,6 +37,11 @@ impl<'ctx> CodeGen<'ctx> {
         let builder = context.create_builder();
         let execution_engine = module.create_jit_execution_engine(olevel).expect("Failed to create execution engine");
         
+        let printf_type = context
+            .i32_type()
+            .fn_type(&[context.ptr_type(AddressSpace::default()).into()], true);
+        module.add_function("printf", printf_type, Some(Linkage::External));
+
         CodeGen {
             context,
             module,
@@ -94,8 +99,6 @@ impl<'ctx> CodeGen<'ctx> {
             &[
                 self.context.ptr_type(AddressSpace::default()).into(),
                 self.context.i32_type().into(),
-                self.context.ptr_type(AddressSpace::default()).into(),
-                self.context.ptr_type(AddressSpace::default()).into(),
             ],
             false
         );
@@ -107,10 +110,16 @@ impl<'ctx> CodeGen<'ctx> {
         let program_exit_bb = self.context.append_basic_block(function, "program_exit");
         self.builder.position_at_end(entry);
 
+        let format_specifier_global = self.module.add_global(self.context.ptr_type(AddressSpace::default()), Some(AddressSpace::default()), "format_specifier");
+        format_specifier_global.set_initializer(&self.builder.build_global_string_ptr("%f\n", "format_specifier").expect("Could not build format specifier"));
+        let format_specifier = self.builder.build_load(
+            self.context.ptr_type(AddressSpace::default()),
+            format_specifier_global.as_pointer_value(),
+            "format_specifier_load"
+        ).expect("Could not load format specifier");
+
         let input_ptr = function.get_first_param().expect("Function should have one parameter").into_pointer_value();
         let input_len = function.get_nth_param(1).expect("Function should have a second parameter").into_int_value();
-        let result_value = function.get_nth_param(2).expect("Function should have a third parameter").into_pointer_value();
-        let filtered_out = function.get_nth_param(3).expect("Function should have a fourth parameter").into_pointer_value();
 
         let loop_bb = self.context.append_basic_block(function, "loop");
         let loop_end_bb = self.context.append_basic_block(function, "loop_end");
@@ -138,22 +147,6 @@ impl<'ctx> CodeGen<'ctx> {
            program_exit_bb 
         );
         self.builder.position_at_end(loop_body_bb);
-
-        // self.builder.build_store(result_value, input); it's ok to leave this uninitialized, we will overwrite it if we don't filter out (even if there's no clauses)
-        self.builder.build_store(filtered_out, self.context.bool_type().const_zero());
-
-        let filtered_out_gep = unsafe {
-            self.builder.build_gep(
-                self.context.bool_type(),
-                filtered_out,
-                &[loop_index.as_basic_value().into_int_value()],
-                "result_ptr"
-            ).expect("Could not build GEP for filtered_out")
-        };
-        self.builder.build_store(
-            filtered_out_gep,
-            self.context.bool_type().const_zero()
-        );
 
         let mut next_input = self.builder.build_load(
             self.context.f64_type(),
@@ -192,11 +185,6 @@ impl<'ctx> CodeGen<'ctx> {
                     self.builder.build_conditional_branch(result_u1, continue_bb, early_exit_bb);
 
                     self.builder.position_at_end(early_exit_bb);
-                    self.builder.build_store(
-                        filtered_out_gep,
-                        self.context.bool_type().const_int(1, false)
-                    );
-
                     self.builder.build_unconditional_branch(loop_end_bb);
 
                     self.builder.position_at_end(continue_bb); // Put it in place for the next clause
@@ -207,17 +195,6 @@ impl<'ctx> CodeGen<'ctx> {
             }
         };
 
-        let result_value_gep = unsafe {
-            self.builder.build_gep(
-                self.context.f64_type(),
-                result_value,
-                &[loop_index.as_basic_value().into_int_value()],
-                "result_ptr"
-            ).expect("Could not build GEP for result")
-        };
-
-
-        self.builder.build_store(result_value_gep, next_input);
         self.builder.build_call(
             self.module.get_function("printf").expect("Could not get printf"),
             &[
