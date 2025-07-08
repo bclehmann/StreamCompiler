@@ -1,7 +1,7 @@
 
 use core::panic;
 
-use inkwell::{builder::Builder, context::Context, execution_engine::{ExecutionEngine, JitFunction}, module::{Linkage, Module}, targets::{CodeModel, FileType, InitializationConfig, RelocMode, Target, TargetMachine}, values::{AnyValue, BasicValue, FloatValue, FunctionValue, IntValue}, AddressSpace, OptimizationLevel};
+use inkwell::{builder::Builder, context::Context, execution_engine::{ExecutionEngine, JitFunction}, module::{Linkage, Module}, passes::{PassBuilderOptions, PassManager}, targets::{CodeModel, FileType, InitializationConfig, RelocMode, Target, TargetMachine}, values::{AnyValue, BasicValue, FloatValue, FunctionValue, IntValue}, AddressSpace, OptimizationLevel};
 
 use crate::parser::{BinaryOperator, Clause, ClauseType, Expr};
 
@@ -29,6 +29,7 @@ pub struct CodeGen<'ctx> {
     module: Module<'ctx>,
     builder: Builder<'ctx>,
     execution_engine: ExecutionEngine<'ctx>,
+    olevel: OptimizationLevel,
 }
 
 impl<'ctx> CodeGen<'ctx> {
@@ -47,20 +48,18 @@ impl<'ctx> CodeGen<'ctx> {
             module,
             builder,
             execution_engine,
+            olevel,
         }
     }
 
-    fn dump_module(&self) {
-        self.module.print_to_file("out.ll").expect("Failed to write module to file");
-        self.module.write_bitcode_to_path("out.bc");
-
+    fn get_matchine(&self) -> TargetMachine {
         Target::initialize_native(&InitializationConfig::default()).expect("Failed to initialize native target");
         let triple = TargetMachine::get_default_triple();
         let cpu = TargetMachine::get_host_cpu_name().to_string();
         let features = TargetMachine::get_host_cpu_features().to_string();
 
         let target = Target::from_triple(&triple).unwrap();
-        let machine = target
+        target
             .create_target_machine(
                 &triple,
                 &cpu,
@@ -69,10 +68,14 @@ impl<'ctx> CodeGen<'ctx> {
                 RelocMode::Default,
                 CodeModel::Default,
             )
-            .unwrap();
-        
-            // create a module and do JIT stuff
+            .unwrap()
+    }
 
+    fn dump_module(&self) {
+        self.module.print_to_file("out.ll").expect("Failed to write module to file");
+        self.module.write_bitcode_to_path("out.bc");
+
+        let machine = self.get_matchine();
         machine.write_to_file(&self.module, FileType::Assembly, "out.S".as_ref()).unwrap();
     }
 
@@ -211,6 +214,18 @@ impl<'ctx> CodeGen<'ctx> {
         self.builder.position_at_end(program_exit_bb);
         self.builder.build_return(None);
 
+        let olevel_str = match self.olevel {
+            OptimizationLevel::None => "O0",
+            OptimizationLevel::Less => "O1",
+            OptimizationLevel::Default => "O2",
+            OptimizationLevel::Aggressive => "O3",
+        };
+
+        let passes = &[
+            format!("default<{}>", olevel_str),
+        ];
+
+        self.module.run_passes(passes.join(",").as_str(), &self.get_matchine(), PassBuilderOptions::create()).expect("Failed to run passes on module");
         // self.dump_module();
         unsafe { self.execution_engine.get_function(program_fn_name).ok().unwrap() }
     }
