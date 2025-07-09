@@ -1,7 +1,7 @@
 
 use core::panic;
 
-use inkwell::{builder::Builder, context::Context, execution_engine::{ExecutionEngine, JitFunction}, module::{Linkage, Module}, passes::{PassBuilderOptions, PassManager}, targets::{CodeModel, FileType, InitializationConfig, RelocMode, Target, TargetMachine}, values::{AnyValue, BasicValue, FloatValue, FunctionValue, IntValue}, AddressSpace, OptimizationLevel};
+use inkwell::{builder::Builder, context::Context, execution_engine::{ExecutionEngine, JitFunction}, module::{Linkage, Module}, passes::{PassBuilderOptions, PassManager, PassManagerSubType}, targets::{CodeModel, FileType, InitializationConfig, RelocMode, Target, TargetMachine}, values::{AnyValue, BasicValue, FloatValue, FunctionValue, IntValue}, AddressSpace, OptimizationLevel};
 
 use crate::parser::{BinaryOperator, Clause, ClauseType, Expr};
 
@@ -38,10 +38,10 @@ impl<'ctx> CodeGen<'ctx> {
         let builder = context.create_builder();
         let execution_engine = module.create_jit_execution_engine(olevel).expect("Failed to create execution engine");
         
-        let printf_type = context
-            .i32_type()
-            .fn_type(&[context.ptr_type(AddressSpace::default()).into()], true);
-        module.add_function("printf", printf_type, Some(Linkage::External));
+        let runtime_module = Module::parse_bitcode_from_path("src/runtime/io.bc", context)
+            .expect("Failed to parse runtime module");
+
+        module.link_in_module(runtime_module).expect("Failed to link runtime module");
 
         CodeGen {
             context,
@@ -52,7 +52,7 @@ impl<'ctx> CodeGen<'ctx> {
         }
     }
 
-    fn get_matchine(&self) -> TargetMachine {
+    fn get_machine(&self) -> TargetMachine {
         Target::initialize_native(&InitializationConfig::default()).expect("Failed to initialize native target");
         let triple = TargetMachine::get_default_triple();
         let cpu = TargetMachine::get_host_cpu_name().to_string();
@@ -75,7 +75,7 @@ impl<'ctx> CodeGen<'ctx> {
         self.module.print_to_file("out.ll").expect("Failed to write module to file");
         self.module.write_bitcode_to_path("out.bc");
 
-        let machine = self.get_matchine();
+        let machine = self.get_machine();
         machine.write_to_file(&self.module, FileType::Assembly, "out.S".as_ref()).unwrap();
     }
 
@@ -108,18 +108,13 @@ impl<'ctx> CodeGen<'ctx> {
         let program_fn_name_string = format!("program_{}", get_id());
         let program_fn_name = program_fn_name_string.as_str();
         let function = self.module.add_function(program_fn_name, program_fn_type, Some(Linkage::External));
+
+        let println_double = self.module.get_function("print_double_newline")
+            .expect("Could not get print_double_newline function from runtime");
         
         let entry = self.context.append_basic_block(function, "entry");
         let program_exit_bb = self.context.append_basic_block(function, "program_exit");
         self.builder.position_at_end(entry);
-
-        let format_specifier_global = self.module.add_global(self.context.ptr_type(AddressSpace::default()), Some(AddressSpace::default()), "format_specifier");
-        format_specifier_global.set_initializer(&self.builder.build_global_string_ptr("%f\n", "format_specifier").expect("Could not build format specifier"));
-        let format_specifier = self.builder.build_load(
-            self.context.ptr_type(AddressSpace::default()),
-            format_specifier_global.as_pointer_value(),
-            "format_specifier_load"
-        ).expect("Could not load format specifier");
 
         let input_ptr = function.get_first_param().expect("Function should have one parameter").into_pointer_value();
         let input_len = function.get_nth_param(1).expect("Function should have a second parameter").into_int_value();
@@ -199,12 +194,9 @@ impl<'ctx> CodeGen<'ctx> {
         };
 
         self.builder.build_call(
-            self.module.get_function("printf").expect("Could not get printf"),
-            &[
-                format_specifier.into(),
-                next_input.as_basic_value_enum().into()
-            ],
-            "printf_call"
+            println_double,
+            &[next_input.into()],
+            "println_double_call"
         );
 
         self.builder.build_unconditional_branch(loop_end_bb);
@@ -225,7 +217,7 @@ impl<'ctx> CodeGen<'ctx> {
             format!("default<{}>", olevel_str),
         ];
 
-        self.module.run_passes(passes.join(",").as_str(), &self.get_matchine(), PassBuilderOptions::create()).expect("Failed to run passes on module");
+        self.module.run_passes(passes.join(",").as_str(), &self.get_machine(), PassBuilderOptions::create()).expect("Failed to run passes on module");
         // self.dump_module();
         unsafe { self.execution_engine.get_function(program_fn_name).ok().unwrap() }
     }
