@@ -17,4 +17,4 @@ Cargo.lock
 *.pdb
 
 # prebuild outputs
-./streamcompiler/src/runtime/out/*.bc
+streamcompiler/src/runtime/out/*.bc
