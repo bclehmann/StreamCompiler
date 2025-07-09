@@ -2,15 +2,15 @@ use std::process::Command;
 
 fn main() {
     println!("cargo::rerun-if-changed=src/runtime");
-    let command_output = Command::new("rustc")
+    let command_output = Command::new("clang")
         .args(
             [
-                "src/runtime/io.rs",
-                "--crate-type=lib",
-                "--emit",
-                "llvm-bc",
+                "-emit-llvm",
+                "-O3",
+                "-c",
+                "src/runtime/io.cpp",
                 "-o",
-                "src/runtime/io.bc",
+                "src/runtime/out/io.bc",
             ],
         )
         .output()

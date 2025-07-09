@@ -38,7 +38,7 @@ impl<'ctx> CodeGen<'ctx> {
         let builder = context.create_builder();
         let execution_engine = module.create_jit_execution_engine(olevel).expect("Failed to create execution engine");
         
-        let runtime_module = Module::parse_bitcode_from_path("src/runtime/io.bc", context)
+        let runtime_module = Module::parse_bitcode_from_path("src/runtime/out/io.bc", context)
             .expect("Failed to parse runtime module");
 
         module.link_in_module(runtime_module).expect("Failed to link runtime module");
@@ -218,7 +218,7 @@ impl<'ctx> CodeGen<'ctx> {
         ];
 
         self.module.run_passes(passes.join(",").as_str(), &self.get_machine(), PassBuilderOptions::create()).expect("Failed to run passes on module");
-        // self.dump_module();
+        self.dump_module();
         unsafe { self.execution_engine.get_function(program_fn_name).ok().unwrap() }
     }
 
