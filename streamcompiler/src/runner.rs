@@ -40,9 +40,9 @@ pub struct CompilerRunner<'a> {
 }
 
 impl<'a> CompilerRunner<'a> {
-    pub fn new(program: &'a [Clause], olevel: OptimizationLevel) -> Box<dyn Runner + 'a> {
+    pub fn new(program: &'a [Clause], olevel: OptimizationLevel, float_precision: u32) -> Box<dyn Runner + 'a> {
         let context = Box::leak(Box::new(Context::create())); // `program` will outlive this scope, so we just leak the memory
-        let codegen = Box::leak(Box::new(CodeGen::new(context, olevel))); 
+        let codegen = Box::leak(Box::new(CodeGen::new(context, olevel, float_precision))); 
     
         let program= codegen.compile_program(program);
 

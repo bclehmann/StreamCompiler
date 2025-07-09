@@ -30,10 +30,11 @@ pub struct CodeGen<'ctx> {
     builder: Builder<'ctx>,
     execution_engine: ExecutionEngine<'ctx>,
     olevel: OptimizationLevel,
+    float_precision: u32,
 }
 
 impl<'ctx> CodeGen<'ctx> {
-    pub fn new(context: &'ctx Context, olevel: OptimizationLevel) -> Self {
+    pub fn new(context: &'ctx Context, olevel: OptimizationLevel, float_precision: u32) -> Self {
         let module = context.create_module("stream_compiler");
         let builder = context.create_builder();
         let execution_engine = module.create_jit_execution_engine(olevel).expect("Failed to create execution engine");
@@ -49,6 +50,7 @@ impl<'ctx> CodeGen<'ctx> {
             builder,
             execution_engine,
             olevel,
+            float_precision,
         }
     }
 
@@ -109,8 +111,8 @@ impl<'ctx> CodeGen<'ctx> {
         let program_fn_name = program_fn_name_string.as_str();
         let function = self.module.add_function(program_fn_name, program_fn_type, Some(Linkage::External));
 
-        let println_double = self.module.get_function("print_double_newline")
-            .expect("Could not get print_double_newline function from runtime");
+        let println_double_var_precision = self.module.get_function("print_double_newline_variable_precision")
+            .expect("Could not get print_double_newline_variable_precision function from runtime");
         
         let entry = self.context.append_basic_block(function, "entry");
         let program_exit_bb = self.context.append_basic_block(function, "program_exit");
@@ -194,8 +196,11 @@ impl<'ctx> CodeGen<'ctx> {
         };
 
         self.builder.build_call(
-            println_double,
-            &[next_input.into()],
+            println_double_var_precision,
+            &[
+                next_input.into(),
+                self.context.i32_type().const_int(self.float_precision as u64, false).into()
+            ],
             "println_double_call"
         );
 

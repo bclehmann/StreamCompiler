@@ -29,10 +29,15 @@ fn main() {
             _ => None
         }
     };
+    let precise_compiled_floats = std::env::args().nth(4).unwrap_or("imprecise".into()).eq_ignore_ascii_case("precise");
 
     if let Ok(ast) = program {
         let runner: Box<dyn Runner> = if !should_interpret {
-            runner::CompilerRunner::new(&ast, olevel.unwrap_or(inkwell::OptimizationLevel::None))
+            runner::CompilerRunner::new(
+                &ast,
+                olevel.unwrap_or(inkwell::OptimizationLevel::None),
+                if precise_compiled_floats { 17 } else { 6 }
+            )
         } else {
             runner::InterpreterRunner::new(ast)
         };
