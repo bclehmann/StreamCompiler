@@ -39,7 +39,7 @@ fn main() {
                 if precise_compiled_floats { 17 } else { 6 }
             )
         } else {
-            runner::InterpreterRunner::new(ast)
+            runner::InterpreterRunner::new_boxed(&ast)
         };
 
         let stdin = std::io::stdin();

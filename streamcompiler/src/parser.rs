@@ -4,7 +4,7 @@ struct StreamCompilerParser;
 
 use pest::{iterators::{Pair, Pairs}, pratt_parser::{Assoc, Op, PrattParser}, Parser};
 
-#[derive(Debug)]
+#[derive(Debug, PartialEq, Eq)]
 pub enum ClauseType {
     Filter,
     Map,

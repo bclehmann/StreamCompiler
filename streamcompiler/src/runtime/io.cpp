@@ -42,4 +42,8 @@ extern "C" void print_double_newline(double value) {
 extern "C" void print_double_newline_variable_precision(double value, int precision) {
     printf("%.*f\n", precision, value); // I didn't know about the * format specifier either :)
 }
+
+extern "C" void print_4doubles_newline_variable_precision(double v1, double v2, double v3, double v4, int precision) {
+    printf("%.*f\n%.*f\n%.*f\n%.*f\n", precision, v1, precision, v2, precision, v3, precision, v4);
+}
 #endif
