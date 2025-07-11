@@ -46,4 +46,9 @@ extern "C" void print_double_newline_variable_precision(double value, int precis
 extern "C" void print_4doubles_newline_variable_precision(double v1, double v2, double v3, double v4, int precision) {
     printf("%.*f\n%.*f\n%.*f\n%.*f\n", precision, v1, precision, v2, precision, v3, precision, v4);
 }
+
+extern "C" void print_8doubles_newline_variable_precision(double v1, double v2, double v3, double v4, double v5, double v6, double v7, double v8, int precision) {
+    printf("%.*f\n%.*f\n%.*f\n%.*f\n%.*f\n%.*f\n%.*f\n%.*f\n", precision, v1, precision, v2, precision, v3, precision, v4, // You may not like it, but this is what peak performance looks like
+           precision, v5, precision, v6, precision, v7, precision, v8);
+}
 #endif

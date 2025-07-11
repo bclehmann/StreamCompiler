@@ -56,8 +56,8 @@ impl<'a> CompilerRunner<'a> {
 
 impl<'a> Runner for CompilerRunner<'a> {
     fn run(&self, input: &[f64]) {
-        if self.jitted_program.is_vectorized {
-            let aligned_input_len = input.len() - input.len() % 4;
+        if let Some(vec_width) = self.jitted_program.vector_width {
+            let aligned_input_len = input.len() - input.len() % vec_width as usize;
             let first_part = &input[..aligned_input_len];
             let rest_part = &input[aligned_input_len..];
 

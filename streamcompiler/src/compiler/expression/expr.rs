@@ -6,9 +6,9 @@ use crate::{compiler::CodeGen, parser::{Expr}};
 #[derive(Debug)]
 pub enum ExprResult<'cg> {
     Double(FloatValue<'cg>),
-    DoubleVec4(VectorValue<'cg>),
+    DoubleVec(VectorValue<'cg>),
     Boolean(IntValue<'cg>),
-    BooleanVec4(VectorValue<'cg>),
+    BooleanVec(VectorValue<'cg>),
 }
 
 impl <'cg> From<FloatValue<'cg>> for ExprResult<'cg> {
@@ -21,8 +21,8 @@ impl <'cg> From<VectorValue<'cg>> for ExprResult<'cg> {
     fn from(value: VectorValue<'cg>) -> Self {
         let element_type: BasicTypeEnum = value.get_type().get_element_type();
         match element_type {
-            BasicTypeEnum::FloatType(_) => ExprResult::DoubleVec4(value),
-            BasicTypeEnum::IntType(_) => ExprResult::BooleanVec4(value),
+            BasicTypeEnum::FloatType(_) => ExprResult::DoubleVec(value),
+            BasicTypeEnum::IntType(_) => ExprResult::BooleanVec(value),
             _ => panic!("Unsupported vector type: {:?}", value.get_type()),
         }
     }
@@ -46,8 +46,8 @@ impl <'cg> From<ExprResult<'cg>> for FloatValue<'cg> {
 impl <'cg> From<ExprResult<'cg>> for VectorValue<'cg> {
     fn from(value: ExprResult<'cg>) -> Self {
         match value {
-            ExprResult::DoubleVec4(v) => v,
-            ExprResult::BooleanVec4(v) => v,
+            ExprResult::DoubleVec(v) => v,
+            ExprResult::BooleanVec(v) => v,
             _ => panic!("Expected a VectorValue, got {:?}", value),
         }
     }

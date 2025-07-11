@@ -1,8 +1,8 @@
 use core::panic;
 
-use inkwell::{builder::Builder, context::Context, execution_engine::{ExecutionEngine, JitFunction}, module::{Linkage, Module}, passes::{PassBuilderOptions, PassManager, PassManagerSubType}, targets::{CodeModel, FileType, InitializationConfig, RelocMode, Target, TargetMachine}, types::VectorType, values::{AnyValue, BasicValue, FloatValue, FunctionValue, IntValue, VectorValue}, AddressSpace, OptimizationLevel};
+use inkwell::{builder::Builder, context::Context, execution_engine::{ExecutionEngine, JitFunction}, module::{Linkage, Module}, passes::{PassBuilderOptions}, targets::{CodeModel, FileType, InitializationConfig, RelocMode, Target, TargetMachine}, values::{BasicMetadataValueEnum, FloatValue, FunctionValue, IntValue, VectorValue}, AddressSpace, OptimizationLevel};
 
-use crate::{compiler::expression::{ExprCompiler, ScalarExprCompiler, VectorExprCompiler}, parser::{BinaryOperator, Clause, ClauseType, Expr}};
+use crate::{compiler::expression::{ExprCompiler, ScalarExprCompiler, VectorExprCompiler}, parser::{Clause, ClauseType, Expr}};
 
 pub type ProgramFunction = unsafe extern "C" fn(*const f64, i32) -> ();
 
@@ -15,6 +15,8 @@ fn get_id() -> u64 {
     }
 }
 
+const VEC_WIDTH: u32 = 8;
+
 pub struct CodeGen<'ctx> {
     pub context: &'ctx Context,
     pub module: Module<'ctx>,
@@ -23,19 +25,19 @@ pub struct CodeGen<'ctx> {
     pub olevel: OptimizationLevel,
     pub float_precision: u32,
     expr_compiler: ScalarExprCompiler,
-    vector_expr_compiler: VectorExprCompiler,
+    vector_expr_compiler: VectorExprCompiler<VEC_WIDTH>,
 }
 
 #[derive(Debug)]
 pub struct JittedProgram<'jit> {
-    pub is_vectorized: bool,
+    pub vector_width: Option<u32>,
     function: JitFunction<'jit, ProgramFunction>,
 }
 
 impl JittedProgram<'_> {
-    pub fn new<'jit>(is_vectorized: bool, function: JitFunction<'jit, ProgramFunction>) -> JittedProgram<'jit> {
+    pub fn new<'jit>(vector_width: Option<u32>, function: JitFunction<'jit, ProgramFunction>) -> JittedProgram<'jit> {
         JittedProgram {
-            is_vectorized,
+            vector_width,
             function,
         }
     }
@@ -99,11 +101,11 @@ impl<'ctx> CodeGen<'ctx> {
     {
         if program.is_empty() || program.iter().any(|clause| clause.clause_type == ClauseType::Filter) {
             let function = self.compile_program_scalar(program); // does not yet support vectorization on filter clauses
-            JittedProgram::new(false, function)
+            JittedProgram::new(None, function)
         }
         else {
-            let function = self.compile_program_vec4(program);
-            JittedProgram::new(true, function)
+            let function = self.compile_program_vec::<VEC_WIDTH>(program);
+            JittedProgram::new(Some(VEC_WIDTH), function)
         }
     }
 
@@ -253,8 +255,12 @@ impl<'ctx> CodeGen<'ctx> {
         unsafe { self.execution_engine.get_function(program_fn_name).ok().unwrap() }
     }
 
-    pub fn compile_program_vec4(&'ctx self, program: &'ctx[Clause]) -> JitFunction<'ctx, ProgramFunction>
+    pub fn compile_program_vec<const VEC_WIDTH: u32>(&'ctx self, program: &'ctx[Clause]) -> JitFunction<'ctx, ProgramFunction>
     {
+        if VEC_WIDTH != 4 && VEC_WIDTH != 8 {
+            panic!("Unsupported vector width: {}. Only 4 and 8 are supported.", VEC_WIDTH);
+        }
+
         struct CompiledClause<'a> {
             clause: &'a Clause<'a>,
             function: FunctionValue<'a>,
@@ -262,7 +268,7 @@ impl<'ctx> CodeGen<'ctx> {
 
         let mut compiled_clauses = Vec::new();
         for clause in program {
-            if let Some(function) = self.compile_clause_vec4(clause) {
+            if let Some(function) = self.compile_clause_vec::<VEC_WIDTH>(clause) {
                 compiled_clauses.push(CompiledClause {
                     function,
                     clause
@@ -286,8 +292,8 @@ impl<'ctx> CodeGen<'ctx> {
         let println_double_var_precision = self.module.get_function("print_double_newline_variable_precision")
             .expect("Could not get print_double_newline_variable_precision function from runtime");
 
-        let println_double4_var_precision = self.module.get_function("print_4doubles_newline_variable_precision")
-            .expect("Could not get print_4doubles_newline_variable_precision function from runtime");
+        let println_doubleN_var_precision = self.module.get_function(&format!("print_{}doubles_newline_variable_precision", VEC_WIDTH))
+            .expect("Could not get print_Ndoubles_newline_variable_precision function from runtime");
         
         let entry = self.context.append_basic_block(function, "entry");
         let program_exit_bb = self.context.append_basic_block(function, "program_exit");
@@ -317,7 +323,7 @@ impl<'ctx> CodeGen<'ctx> {
                 loop_index.as_basic_value().into_int_value(),
                 self.builder.build_int_signed_div(
                     input_len,
-                    self.context.i32_type().const_int(4, false),
+                    self.context.i32_type().const_int(VEC_WIDTH as u64, false),
                     "loop_condition_div"
                 ).expect("Could not build loop condition division"),
                 "loop_condition"
@@ -328,10 +334,10 @@ impl<'ctx> CodeGen<'ctx> {
         self.builder.position_at_end(loop_body_bb);
 
         let mut next_input = self.builder.build_load(
-            self.context.f64_type().vec_type(4),
+            self.context.f64_type().vec_type(VEC_WIDTH as u32),
             unsafe {
                 self.builder.build_gep(
-                    self.context.f64_type().vec_type(4),
+                    self.context.f64_type().vec_type(VEC_WIDTH as u32),
                     input_ptr,
                     &[loop_index.as_basic_value().into_int_value()],
                     "input_ptr"
@@ -345,7 +351,7 @@ impl<'ctx> CodeGen<'ctx> {
             self.builder.build_unconditional_branch(clause_entry_bb);
             self.builder.position_at_end(clause_entry_bb);
 
-            let result_f64v4 = self.builder.build_call(
+            let result_f64v = self.builder.build_call(
                 clause.function,
                 &[next_input.into()],
                 "call_clause"
@@ -356,7 +362,7 @@ impl<'ctx> CodeGen<'ctx> {
 
             match clause.clause.clause_type {
                 ClauseType::Filter => {
-                    panic!("Vec4 filtering is not supported yet, please use scalar filtering instead");
+                    panic!("Vec filtering is not supported yet, please use scalar filtering instead");
                     /*
                     let early_exit_bb = self.context.append_basic_block(function, "early_exit");
                     let continue_bb = self.context.append_basic_block(function, "continue");
@@ -372,26 +378,31 @@ impl<'ctx> CodeGen<'ctx> {
                     */
                 },
                 ClauseType::Map => {
-                    next_input = result_f64v4; // Update next input for the next clause
+                    next_input = result_f64v; // Update next input for the next clause
                 }
             }
         };
 
-        let f64_0 = self.builder.build_extract_element(next_input, self.context.i32_type().const_int(0, false), "result0").unwrap();
-        let f64_1 = self.builder.build_extract_element(next_input, self.context.i32_type().const_int(1, false), "result1").unwrap();
-        let f64_2 = self.builder.build_extract_element(next_input, self.context.i32_type().const_int(2, false), "result2").unwrap();
-        let f64_3 = self.builder.build_extract_element(next_input, self.context.i32_type().const_int(3, false), "result3").unwrap();
+        let double_args = (0..VEC_WIDTH).map(|i| {
+            From::from(self.builder.build_extract_element(
+                next_input,
+                self.context.i32_type().const_int(i as u64, false),
+                &format!("result{}", i)
+            ).unwrap())
+        }).collect::<Vec<BasicMetadataValueEnum>>();
+
+        let precision = self.context.i32_type().const_int(self.float_precision as u64, false).into();
+        let precision_vec = vec!(precision);
+
+        let args = [
+            double_args,
+            precision_vec
+        ].concat();
 
         self.builder.build_call(
-            println_double4_var_precision,
-            &[
-                f64_0.into(),
-                f64_1.into(),
-                f64_2.into(),
-                f64_3.into(),
-                self.context.i32_type().const_int(self.float_precision as u64, false).into()
-            ],
-            "println_double4_call"
+            println_doubleN_var_precision,
+            args.as_slice(),
+            "println_doubleN_call"
         );
 
         self.builder.build_unconditional_branch(loop_end_bb);
@@ -417,10 +428,10 @@ impl<'ctx> CodeGen<'ctx> {
         unsafe { self.execution_engine.get_function(program_fn_name).ok().unwrap() }
     }
 
-    fn compile_clause_vec4(&self, clause: &Clause) -> Option<FunctionValue<'_>> {
-        let vec4_type = self.context.f64_type().vec_type(4);
-        let fn_type = vec4_type.fn_type(&[vec4_type.into()], false);
-        let fn_name = format!("#clause_vec4_{}", get_id());
+    fn compile_clause_vec<const VEC_WIDTH: u32>(&self, clause: &Clause) -> Option<FunctionValue<'_>> {
+        let vec_type = self.context.f64_type().vec_type(VEC_WIDTH);
+        let fn_type = vec_type.fn_type(&[vec_type.into()], false);
+        let fn_name = format!("#clause_vec{VEC_WIDTH}_{}", get_id());
         let function = self.module.add_function(&fn_name, fn_type, Some(Linkage::Private));
 
         let entry = self.context.append_basic_block(function, "entry");
@@ -429,7 +440,7 @@ impl<'ctx> CodeGen<'ctx> {
         let x = function.get_first_param().expect("Function should have one parameter").into_vector_value();
         match clause.clause_type {
             ClauseType::Filter => {
-                panic!("Vec4 filtering is not supported yet, please use scalar filtering instead");
+                panic!("Vec filtering is not supported yet, please use scalar filtering instead");
                 /*
                 let condition = self.compile_expression(&clause.expression, x);
                 if condition.is_none() {
@@ -446,7 +457,7 @@ impl<'ctx> CodeGen<'ctx> {
                 */
             },
             ClauseType::Map => {
-                let mapped_value = self.compile_expression_vec4(&clause.expression, x);
+                let mapped_value = self.compile_expression_vec(&clause.expression, x);
                 if mapped_value.is_none() {
                     panic!("Failed to compile map expression");
                 }
@@ -496,7 +507,7 @@ impl<'ctx> CodeGen<'ctx> {
         return Some(function);
     }
 
-    fn compile_expression_vec4<'cg>(&'cg self, expr: &Expr, input: VectorValue<'cg>) -> Option<VectorValue<'cg>> {
+    fn compile_expression_vec<'cg>(&'cg self, expr: &Expr, input: VectorValue<'cg>) -> Option<VectorValue<'cg>> {
         self.vector_expr_compiler.compile_expression(self, expr, input.into()).map(|v| v.into())
     }
 
@@ -508,7 +519,7 @@ impl<'ctx> CodeGen<'ctx> {
         self.expr_compiler.float_as_bool(self, value.into()).into()
     }
 
-    fn float_as_bool_vec4<'cg>(&'cg self, value: VectorValue<'cg>) -> IntValue<'cg> {
+    fn float_as_bool_vec<'cg>(&'cg self, value: VectorValue<'cg>) -> IntValue<'cg> {
         self.vector_expr_compiler.float_as_bool(self, value.into()).into()
     }
 }
