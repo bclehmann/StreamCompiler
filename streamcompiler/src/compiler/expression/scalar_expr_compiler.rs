@@ -35,6 +35,7 @@ impl ExprCompiler for ScalarExprCompiler {
                 };
 
                 let result = match op.operator {
+                    // TODO: Consider optionally using build_float_add(..).as_instruction().unwrap().set_fast_math_flags(0xffffffff) to set fast math flags, which will allow reassociation and other fun
                     BinaryOperator::Add => codegen.builder.build_float_add(left, right, "add").into(),
                     BinaryOperator::Subtract => codegen.builder.build_float_sub(left, right, "sub").into(),
                     BinaryOperator::Multiply => codegen.builder.build_float_mul(left, right, "mul").into(),
