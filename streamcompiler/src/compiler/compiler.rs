@@ -1,6 +1,6 @@
 use core::panic;
 
-use inkwell::{builder::Builder, context::Context, execution_engine::{ExecutionEngine, JitFunction}, module::{Linkage, Module}, passes::PassBuilderOptions, targets::{CodeModel, FileType, InitializationConfig, RelocMode, Target, TargetMachine}, types::{BasicMetadataTypeEnum, BasicType, BasicTypeEnum}, values::{BasicMetadataValueEnum, FloatValue, FunctionValue, IntValue, VectorValue}, AddressSpace, OptimizationLevel};
+use inkwell::{builder::Builder, context::Context, execution_engine::{ExecutionEngine, JitFunction}, module::{Linkage, Module}, passes::PassBuilderOptions, targets::{CodeModel, FileType, InitializationConfig, RelocMode, Target, TargetMachine}, types::{BasicType, BasicTypeEnum}, values::{BasicMetadataValueEnum, FloatValue, FunctionValue, IntValue, VectorValue}, AddressSpace, OptimizationLevel};
 
 use crate::{compiler::expression::{ExprCompiler, ScalarExprCompiler, VectorExprCompiler}, parser::{Clause, ClauseType, Expr}};
 
@@ -144,7 +144,7 @@ impl<'ctx> CodeGen<'ctx> {
             }
         }
 
-        let println_doubleN_var_precision = self.module.get_function(&format!("print_{}doubles_newline_variable_precision", VEC_WIDTH))
+        let println_double_n_var_precision = self.module.get_function(&format!("print_{}doubles_newline_variable_precision", VEC_WIDTH))
             .expect("Could not get print_Ndoubles_newline_variable_precision function from runtime");
         
         let entry = self.context.append_basic_block(function, "entry");
@@ -156,7 +156,7 @@ impl<'ctx> CodeGen<'ctx> {
 
         let loop_bb = self.context.append_basic_block(function, "loop");
         let loop_end_bb = self.context.append_basic_block(function, "loop_end");
-        self.builder.build_unconditional_branch(loop_bb);
+        self.builder.build_unconditional_branch(loop_bb).expect("Failed to build unconditional branch to loop");
         self.builder.position_at_end(loop_bb);
         let loop_index = self.builder.build_phi(self.context.i32_type(), "loop_index").expect("Failed to create loop index");
         loop_index.add_incoming(&[
@@ -182,7 +182,7 @@ impl<'ctx> CodeGen<'ctx> {
             ).expect("Could not build loop condition"),
             loop_body_bb,
            program_exit_bb 
-        );
+        ).expect("Failed to build conditional branch for loop");
         self.builder.position_at_end(loop_body_bb);
 
         let mut next_input = self.builder.build_load(
@@ -200,7 +200,7 @@ impl<'ctx> CodeGen<'ctx> {
 
         for clause in compiled_clauses {
             let clause_entry_bb = self.context.append_basic_block(function, "clause_entry");
-            self.builder.build_unconditional_branch(clause_entry_bb);
+            self.builder.build_unconditional_branch(clause_entry_bb).expect("Failed to build unconditional branch to clause entry");
             self.builder.position_at_end(clause_entry_bb);
 
             let result = self.builder.build_call(
@@ -219,15 +219,19 @@ impl<'ctx> CodeGen<'ctx> {
                             panic!("Vec filtering is not supported yet, please use scalar filtering instead");
                         },
                         BasicTypeEnum::FloatType(t) => {
+                            if t != self.context.f64_type() {
+                                panic!("Expected f64 type for input parameter, got {:?}", t);
+                            }
+
                             let early_exit_bb = self.context.append_basic_block(function, "early_exit");
                             let continue_bb = self.context.append_basic_block(function, "continue");
 
                             let result_u1 = self.float_as_bool(result.into_float_value());
 
-                            self.builder.build_conditional_branch(result_u1, continue_bb, early_exit_bb);
+                            self.builder.build_conditional_branch(result_u1, continue_bb, early_exit_bb).expect("Failed to build conditional branch for filter clause");
 
                             self.builder.position_at_end(early_exit_bb);
-                            self.builder.build_unconditional_branch(loop_end_bb);
+                            self.builder.build_unconditional_branch(loop_end_bb).expect("Failed to build unconditional branch to loop end");
 
                             self.builder.position_at_end(continue_bb); // Put it in place for the next clause
                         },
@@ -272,17 +276,17 @@ impl<'ctx> CodeGen<'ctx> {
         ].concat();
 
         self.builder.build_call(
-            println_doubleN_var_precision,
+            println_double_n_var_precision,
             args.as_slice(),
             "println_doubleN_call"
-        );
+        ).expect("Failed to build call to println_doubleN_var_precision");
 
-        self.builder.build_unconditional_branch(loop_end_bb);
+        self.builder.build_unconditional_branch(loop_end_bb).expect("Failed to build unconditional branch to loop end");
         self.builder.position_at_end(loop_end_bb);
-        self.builder.build_unconditional_branch(loop_bb);
+        self.builder.build_unconditional_branch(loop_bb).expect("Failed to build unconditional branch to loop");
 
         self.builder.position_at_end(program_exit_bb);
-        self.builder.build_return(None);
+        self.builder.build_return(None).expect("Failed to build return at program exit");
 
         let olevel_str = match self.olevel {
             OptimizationLevel::None => "O0",

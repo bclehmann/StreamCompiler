@@ -21,7 +21,7 @@ fn main() {
         let unparsed = std::env::args().nth(3)
             .unwrap_or("O0".to_string());
 
-        match(unparsed.as_str()) {
+        match unparsed.as_str() {
             "O0" => Some(inkwell::OptimizationLevel::None),
             "O1" => Some(inkwell::OptimizationLevel::Less),
             "O2" => Some(inkwell::OptimizationLevel::Default),
