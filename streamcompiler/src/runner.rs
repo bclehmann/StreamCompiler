@@ -47,7 +47,7 @@ impl<'a> CompilerRunner<'a> {
         let context = Box::leak(Box::new(Context::create())); // `program` will outlive this scope, so we just leak the memory
         let codegen = Box::leak(Box::new(CodeGen::new(context, olevel, float_precision))); 
     
-        let jitted_program = codegen.compile_program(program);
+        let jitted_program = codegen.compile(program);
         let interpreter = InterpreterRunner::new(program);
 
         Box::new(CompilerRunner { interpreter, jitted_program })

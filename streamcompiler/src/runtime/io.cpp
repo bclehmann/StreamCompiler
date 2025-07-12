@@ -39,7 +39,7 @@ extern "C" void print_double_newline(double value) {
     printf("%.17f\n", value); // 17 digits is roughly the max meaningful precision for a double
 }
 
-extern "C" void print_double_newline_variable_precision(double value, int precision) {
+extern "C" void print_1doubles_newline_variable_precision(double value, int precision) {
     printf("%.*f\n", precision, value); // I didn't know about the * format specifier either :)
 }
 
