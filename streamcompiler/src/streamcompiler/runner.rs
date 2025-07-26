@@ -1,7 +1,7 @@
 use inkwell::context::Context;
 use inkwell::OptimizationLevel;
 
-use crate::interpreter;
+use crate::streamcompiler::interpreter;
 use crate::parser::Clause;
 use crate::compiler::{CodeGen, JittedProgram};
 
