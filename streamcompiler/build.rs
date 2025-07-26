@@ -1,8 +1,17 @@
+use std::env;
 use std::process::Command;
 
 fn main() {
     println!("cargo::rerun-if-changed=src/runtime");
-    let command_output = Command::new("clang")
+    let clangdir = env::var("CLANGDIR");
+    let clang_path = match clangdir {
+        Ok(path) => format!("{path}/clang"),
+        Err(_) => {
+            "clang".to_string() // Default to whatever is in PATH and pray
+        }
+    };
+
+    let command_output = Command::new(clang_path)
         .args(
             [
                 "-emit-llvm",
