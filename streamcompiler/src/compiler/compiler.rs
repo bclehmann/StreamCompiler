@@ -381,6 +381,7 @@ impl<'ctx> CodeGen<'ctx> {
         let loop_end_bb = self.context.append_basic_block(function, "loop_end");
         let exit_bb = self.context.append_basic_block(function, "exit");
 
+        let should_include = self.builder.build_alloca(self.context.bool_type(), "should_filter").expect("Failed to allocate should_filter variable");
         self.builder.build_unconditional_branch(loop_start_bb).expect("Failed to build unconditional branch to loop");
         self.builder.position_at_end(loop_start_bb);
 
@@ -420,7 +421,6 @@ impl<'ctx> CodeGen<'ctx> {
             "next_input"
         ).expect("Failed to load next input");
 
-        let should_include = self.builder.build_alloca(self.context.bool_type(), "should_filter").expect("Failed to allocate should_filter variable");
         self.builder.build_store(should_include, self.context.bool_type().const_all_ones()).expect("Failed to store should_filter variable");
 
         for clause in compiled_clauses {
