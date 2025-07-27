@@ -1,3 +1,4 @@
+use std::ffi::CString;
 use inkwell::OptimizationLevel;
 use crate::numgrep::runner::Runner;
 
@@ -22,9 +23,9 @@ pub fn entrypoint(
         let input_lines = input_str.lines();
 
         let parsed = input_lines
-            .map(|line| (line, floats_within_string(line)))
+            .map(|line| (CString::new(line).expect("Could not build cstring"), floats_within_string(line)))
             .filter(|(_, floats)| !floats.is_empty())
-            .collect::<Vec<(&str, Vec<f64>)>>();
+            .collect::<Vec<(CString, Vec<f64>)>>();
 
         runner.run(parsed.as_slice());
     } else {

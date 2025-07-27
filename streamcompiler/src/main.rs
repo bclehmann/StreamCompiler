@@ -39,7 +39,7 @@ fn main() {
     let cli = Cli::parse();
 
     let command = cli.command.as_ref()
-        .and_then(|cmd| {;
+        .and_then(|cmd| {
             if cmd.eq_ignore_ascii_case("numgrep") {
                 Some(NumGrep)
             } else if cmd.eq_ignore_ascii_case("streamcompiler") {
