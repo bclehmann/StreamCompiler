@@ -10,7 +10,7 @@ impl<const VEC_WIDTH: u32> VectorExprCompiler<VEC_WIDTH> {
         VectorType::const_vector(&values)
     }
 
-    fn const_vec<'a>(self: &'a Self, context: &'a Context, value: f64) -> VectorValue<'a> {
+    pub fn const_vec<'a>(self: &'a Self, context: &'a Context, value: f64) -> VectorValue<'a> {
         let as_f64 = context.f64_type().const_float(value);
         self.fill_vec(as_f64)
     }

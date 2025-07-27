@@ -15,6 +15,12 @@ impl<'a> Runner<'a> {
 
         let jitted_program = codegen.compile_numgrep(program);
 
+        match jitted_program.vector_width {
+            Some(8) => (),
+            Some(_) => panic!("Vector width other than 8 is not supported for numgrep"),
+            None => (),
+        }
+
         Runner {
             jitted_program,
         }
@@ -25,13 +31,25 @@ impl<'a> Runner<'a> {
             .flat_map(|(_, floats)| floats.iter().cloned())
             .collect::<Vec<f64>>();
 
-        let should_include = vec![false; input_floats.len()];
+        // TODO: Handle when input_floats is not a multiple of the vector width
+        let should_include = vec![0u8; input_floats.len() / self.jitted_program.vector_width.unwrap_or(1) as usize];
         unsafe { self.jitted_program.call(input_floats.as_ptr(), should_include.as_ptr(), input_floats.len() as i32); }
+
+        println!("should_include: {:?}", should_include);
+
+        #[inline]
+        fn is_set(should_include: &[u8], index: usize, vec_width: usize) -> bool {
+            if vec_width != 1 {
+                should_include[index / vec_width] & (1u8 << (index % vec_width)) != 0
+            } else {
+                should_include[index] != 0
+            }
+        }
 
         let mut output_index = 0;
         for i in 0..input.len() {
             for j in 0..input[i].1.len() {
-                if should_include[output_index + j] {
+                if is_set(&should_include, output_index + j, self.jitted_program.vector_width.unwrap_or(1) as usize) {
                     println!("{}", input[i].0);
                     break;
                 }
