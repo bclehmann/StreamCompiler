@@ -18,3 +18,5 @@ Cargo.lock
 
 # prebuild outputs
 streamcompiler/src/runtime/out/*.bc
+
+.env
