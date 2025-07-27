@@ -11,7 +11,7 @@ mod numgrep;
 fn main() {
     match std::env::args().nth(0) {
         Some(arg) if arg.ends_with("numgrep") => {
-            panic!("numgrep not implemented yet")
+            numgrep::main::entrypoint();
         },
         _ => {
             streamcompiler::main::entrypoint();

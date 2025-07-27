@@ -1,4 +1,4 @@
 mod compiler;
 mod expression;
 
-pub use compiler::{CodeGen, JittedProgram};
+pub use compiler::{CodeGen, JittedStreamCompilerProgram, JittedNumgrepProgram};
