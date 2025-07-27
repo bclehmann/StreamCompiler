@@ -478,7 +478,7 @@ impl<'ctx> CodeGen<'ctx> {
         ];
 
         self.module.run_passes(passes.join(",").as_str(), &self.get_machine(), PassBuilderOptions::create()).expect("Failed to run passes on module");
-        self.dump_module();
+        // self.dump_module();
         unsafe { self.execution_engine.get_function(&fn_name).ok().unwrap() }
     }
 
