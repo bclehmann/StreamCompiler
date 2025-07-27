@@ -1,33 +1,21 @@
+use inkwell::OptimizationLevel;
 use crate::parser;
 use crate::streamcompiler::runner;
 use crate::streamcompiler::runner::Runner;
 
-pub fn entrypoint() {
-    let program_text = std::env::args().nth(1).expect("No program text provided");
-    let program = parser::lex_and_parse(&program_text);
-    let should_interpret= std::env::args().nth(2).unwrap_or("interpret".into()).eq_ignore_ascii_case("interpret");
-
-    let olevel = if should_interpret {
-        None
-    } else {
-        let unparsed = std::env::args().nth(3)
-            .unwrap_or("O0".to_string());
-
-        match unparsed.as_str() {
-            "O0" => Some(inkwell::OptimizationLevel::None),
-            "O1" => Some(inkwell::OptimizationLevel::Less),
-            "O2" => Some(inkwell::OptimizationLevel::Default),
-            "O3" => Some(inkwell::OptimizationLevel::Aggressive),
-            _ => None
-        }
-    };
-    let precise_compiled_floats = std::env::args().nth(4).unwrap_or("imprecise".into()).eq_ignore_ascii_case("precise");
+pub fn entrypoint(
+    program_text: &str,
+    should_interpret: bool,
+    optimization_level: OptimizationLevel,
+    precise_compiled_floats: bool,
+) {
+    let program = parser::lex_and_parse(program_text);
 
     if let Ok(ast) = program {
         let runner: Box<dyn Runner> = if !should_interpret {
             runner::CompilerRunner::new(
                 &ast,
-                olevel.unwrap_or(inkwell::OptimizationLevel::None),
+                optimization_level,
                 if precise_compiled_floats { 17 } else { 6 }
             )
         } else {
