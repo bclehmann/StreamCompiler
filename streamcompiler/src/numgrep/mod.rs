@@ -1,2 +1,3 @@
-mod runner;
+mod compiler;
 pub mod main;
+mod interpreter;

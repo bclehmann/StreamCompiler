@@ -10,6 +10,7 @@ mod parser;
 mod compiler;
 mod streamcompiler;
 mod numgrep;
+mod interpreter;
 
 #[derive(clap::Parser)]
 #[derive(Debug)]
@@ -74,6 +75,7 @@ fn main() {
         NumGrep => {
             numgrep::main::entrypoint(
                 &cli.program_text,
+                cli.interpret,
                 olevel,
             );
         },
