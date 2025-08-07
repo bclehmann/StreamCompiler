@@ -10,6 +10,12 @@ This also adds a `numgrep` command, which is a simple grep-like utility that onl
 
 It currently is implemented by checking `argv[0]`, so you should create a symlink to the `streamcompiler` binary called `numgrep` to use it. You can also pass `--command numgrep` to use it without a symlink.
 
+## Building
+
+Since bringing in LLVM can be a bit of a pain, this builds without the JIT compiler by default. If that's fine for your use case then you should be able to just run `cargo build --release` and it will work.
+
+If you want the JIT you need llvm v18 installed, and then you can build with `cargo build --release --features "jit"`. If you want to use StreamCompiler, ensure that either clang v18 is the default in your path or point CLANGDIR to the directory containing clang v18. Clang isn't necessary for numgrep or for the interpreter.
+
 ## Usage
 
 ```

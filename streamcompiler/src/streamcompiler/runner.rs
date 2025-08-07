@@ -1,8 +1,12 @@
+#[cfg(feature="jit")]
 use inkwell::context::Context;
+#[cfg(feature="jit")]
 use inkwell::OptimizationLevel;
 
 use crate::streamcompiler::interpreter;
 use crate::parser::Clause;
+
+#[cfg(feature="jit")]
 use crate::compiler::{CodeGen, JittedStreamCompilerProgram};
 
 pub trait Runner {
@@ -37,16 +41,18 @@ impl<'a> Runner for InterpreterRunner<'a> {
 }
 
 #[derive(Debug)]
+#[cfg(feature="jit")]
 pub struct CompilerRunner<'a> {
     interpreter: InterpreterRunner<'a>,
     jitted_program: JittedStreamCompilerProgram<'a>,
 }
 
+#[cfg(feature="jit")]
 impl<'a> CompilerRunner<'a> {
     pub fn new(program: &'a [Clause], olevel: OptimizationLevel, float_precision: u32) -> Box<dyn Runner + 'a> {
         let context = Box::leak(Box::new(Context::create())); // `program` will outlive this scope, so we just leak the memory
         let codegen = Box::leak(Box::new(CodeGen::new(context, olevel, float_precision, true)));
-    
+
         let jitted_program = codegen.compile_stream_compiler(program);
         let interpreter = InterpreterRunner::new(program);
 
@@ -54,6 +60,7 @@ impl<'a> CompilerRunner<'a> {
     }
 }
 
+#[cfg(feature="jit")]
 impl<'a> Runner for CompilerRunner<'a> {
     fn run(&self, input: &[f64]) {
         if let Some(vec_width) = self.jitted_program.vector_width {

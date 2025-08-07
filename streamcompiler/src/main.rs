@@ -7,6 +7,7 @@ use clap::Parser;
 use crate::Commands::{NumGrep, StreamCompiler};
 
 mod parser;
+#[cfg(feature="jit")]
 mod compiler;
 mod streamcompiler;
 mod numgrep;
@@ -55,20 +56,17 @@ fn main() {
         })
         .unwrap_or(StreamCompiler);
 
-    let olevel = match cli.optimization_level {
-            0 => Some(inkwell::OptimizationLevel::None),
-            1 => Some(inkwell::OptimizationLevel::Less),
-            2 => Some(inkwell::OptimizationLevel::Default),
-            3 => Some(inkwell::OptimizationLevel::Aggressive),
-            _ => None
-    }.unwrap_or(inkwell::OptimizationLevel::None);
+    #[cfg(not(feature="jit"))]
+    if !cli.interpret {
+        eprintln!("Warning: JIT compilation is not enabled. The program will run in interpreted mode. Build with the `--features jit` flag to enable JIT compilation or run with --interpret to silence this warning.");
+    }
 
     match command {
         StreamCompiler => {
             streamcompiler::main::entrypoint(
                 &cli.program_text,
                 cli.interpret,
-                olevel,
+                cli.optimization_level,
                 !cli.imprecise,
             );
         },
@@ -76,7 +74,7 @@ fn main() {
             numgrep::main::entrypoint(
                 &cli.program_text,
                 cli.interpret,
-                olevel,
+                cli.optimization_level,
             );
         },
     }

@@ -1,6 +1,7 @@
 use std::env;
 use std::process::Command;
 
+#[cfg(feature="jit")]
 fn main() {
     println!("cargo::rerun-if-changed=src/runtime");
     let clangdir = env::var("CLANGDIR");
@@ -34,3 +35,6 @@ fn main() {
         );
     }
 }
+
+#[cfg(not(feature="jit"))]
+fn main() {}
