@@ -6,7 +6,7 @@ I may consider adding some heuristics (e.g. interpret by default but JIT compile
 
 ## numgrep
 
-This also adds a `numgrep` command, which is a simple grep-like utility that only supports filter clauses and it prints all lines containing a number that matches the filter.
+This also adds a `numgrep` command, which is a simple grep-like utility that only supports filter clauses and it prints all lines containing a number that matches the filter. For numgrep you can omit the "filter" keyword, so you can write `x % 2` instead of `filter x % 2`.
 
 It currently is implemented by checking `argv[0]`, so you should create a symlink to the `streamcompiler` binary called `numgrep` to use it. You can also pass `--command numgrep` to use it without a symlink.
 

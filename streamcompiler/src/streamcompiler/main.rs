@@ -34,7 +34,7 @@ pub fn entrypoint(
     optimization_level: u8,
     precise_compiled_floats: bool,
 ) {
-    let program = parser::lex_and_parse(program_text);
+    let program = parser::lex_and_parse(program_text, None);
 
     if let Ok(ast) = program {
         let runner = get_runner(&ast, should_interpret, optimization_level, precise_compiled_floats);

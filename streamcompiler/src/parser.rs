@@ -4,7 +4,7 @@ struct StreamCompilerParser;
 
 use pest::{iterators::{Pair, Pairs}, pratt_parser::{Assoc, Op, PrattParser}, Parser};
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
 pub enum ClauseType {
     Filter,
     Map,
@@ -99,7 +99,7 @@ fn parse_expression(pairs: Pairs<Rule>) -> Result<Expr, &'static str> {
     Ok(expr)
 }
 
-fn parse_clause(pair: Pair<Rule>) -> Result<Clause, &'static str> {
+fn parse_clause(pair: Pair<Rule>, treat_anonymous_clause_as: Option<ClauseType>) -> Result<Clause, &'static str> {
     let inner_pairs = pair.into_inner();
     if inner_pairs.len() != 1 {
         return Err("Expected exactly one inner pair for clause");
@@ -110,6 +110,12 @@ fn parse_clause(pair: Pair<Rule>) -> Result<Clause, &'static str> {
     let clause_type = match inner.as_rule() {
         Rule::filter_clause => ClauseType::Filter,
         Rule::map_clause => ClauseType::Map,
+        Rule::anonymous_clause => {
+            match treat_anonymous_clause_as {
+                Some(ct) => ct,
+                None => return Err("Anonymous clause encountered but no default clause type provided"),
+            }
+        }
         _ => return Err("Unexpected rule in clause"),
     };
 
@@ -119,27 +125,27 @@ fn parse_clause(pair: Pair<Rule>) -> Result<Clause, &'static str> {
     });
 }
 
-fn parse_program(program: Pair<Rule>) -> Result<Vec<Clause>, &'static str> {
+fn parse_program(program: Pair<Rule>, treat_anonymous_clause_as: Option<ClauseType>) -> Result<Vec<Clause>, &'static str> {
     let mut clauses = vec![];
 
     for pair in program.into_inner() {
         match pair.as_rule() {
             Rule::clause => {
-                let clause = parse_clause(pair);
+                let clause = parse_clause(pair, treat_anonymous_clause_as);
                 match clause {
                     Ok(c) => clauses.push(c),
                     Err(e) => return Err(e),
                 }
             }
             _ => {
-                return Err("Unnexpected rule in program");
+                return Err("Unexpected rule in program");
             }
         }
     }
     Ok(clauses)
 }
 
-pub fn lex_and_parse(program_text: &str) -> Result<Vec<Clause>, &'static str> {
+pub fn lex_and_parse(program_text: &str, treat_anonymous_clause_as: Option<ClauseType>) -> Result<Vec<Clause>, &'static str> {
     if let Ok(mut pairs) = StreamCompilerParser::parse(Rule::program, program_text) {
         if pairs.len() != 1 {
             return Err("Expected exactly one program, got {}");
@@ -147,7 +153,7 @@ pub fn lex_and_parse(program_text: &str) -> Result<Vec<Clause>, &'static str> {
         let inner = pairs.next().expect("Expected one program pair");
 
         match inner.as_rule() {
-            Rule::program => parse_program(inner),
+            Rule::program => parse_program(inner, treat_anonymous_clause_as),
             _ => Err("Unexpected rule"),
         }
 

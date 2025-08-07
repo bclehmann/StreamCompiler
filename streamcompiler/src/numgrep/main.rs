@@ -4,6 +4,7 @@ use inkwell::OptimizationLevel;
 use crate::numgrep::compiler::Runner;
 use std::ffi::CString;
 use crate::numgrep::interpreter::interpret_program_on_input;
+use crate::parser::ClauseType;
 
 fn floats_within_string(s: &str) -> Vec<f64> {
     s.split(|c: char| !c.is_numeric() && c != '.' && c != '-')
@@ -28,7 +29,7 @@ pub fn entrypoint(
     should_interpret: bool,
     optimization_level: u8,
 ) {
-    let program = crate::parser::lex_and_parse(&program_text);
+    let program = crate::parser::lex_and_parse(&program_text, Some(ClauseType::Filter));
 
     if let Ok(ast) = program {
         #[cfg(feature="jit")]

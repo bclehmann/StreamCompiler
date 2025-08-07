@@ -33,7 +33,8 @@ expr = { atom ~ (bin_op ~ atom)* }
 
 filter_clause = { "filter" ~ expr }
 map_clause = { "map" ~ expr }
+anonymous_clause = { expr }
 
-clause = { filter_clause | map_clause } 
+clause = { filter_clause | map_clause | anonymous_clause }
 
 program = { (clause ~ "|")* ~ clause }
